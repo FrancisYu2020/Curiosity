@@ -16,16 +16,16 @@ class InverseModel(nn.Module):
     '''
     The inverse model by default will transform the resized grey-scale image batch to a fixed dim feature vector [None, 1, 42, 42] -> [None, 288]
     '''
-    def __init__(self, image_size=42, nConvs=4, action_dim=4) -> None:
+    def __init__(self, image_size=84, nConvs=4, action_dim=4) -> None:
         super().__init__()
-        module_list = [nn.Conv2d(1, 32, 3, 2), nn.ELU()] + [nn.Conv2d(32, 32, 3, 2), nn.ELU()]*(nConvs - 1)
+        module_list = [nn.Conv2d(4, 32, 3, 2), nn.ELU()] + [nn.Conv2d(32, 32, 3, 2), nn.ELU()]*(nConvs - 1)
         self.feature_size = image_size
         for _ in range(nConvs):
             self.feature_size = (self.feature_size - 2)//2 + 1
-        self.feature_size = feature_size**2 * 32
+        self.feature_size = self.feature_size**2 * 32
         self.feature = nn.Sequential(*module_list)
         self.inverse_model = nn.Sequential(
-            nn.Linear(2 * self.feature_size, 256),
+            nn.Linear(1024, 256),
             nn.ReLU(),
             nn.Linear(256, action_dim)
         )
@@ -33,6 +33,7 @@ class InverseModel(nn.Module):
     def forward(self, s_curr, s_next):
         phi_curr = self.feature(s_curr).flatten(start_dim=1)
         phi_next = self.feature(s_next).flatten(start_dim=1)
+        # print(phi_curr.size(), phi_next.size())
         feature = torch.cat([phi_curr, phi_next], dim=1)
         a_pred = self.inverse_model(feature)
         return phi_curr, phi_next, a_pred
@@ -45,13 +46,14 @@ class ForwardModel(nn.Module):
         super().__init__()
         self.feature_size = feature_size
         self.forward_model = nn.Sequential(
-            nn.Linear(self.feature_size + action_dim, 256),
+            nn.Linear(513, 256),
             nn.ReLU(),
-            nn.Linear(256, self.feature_size)
+            nn.Linear(256, 512)
         )
 
     def forward(self, phi_curr, action):
-        feature = torch.cat([action, phi_curr], dim=1)
+        # print(action.shape)
+        feature = torch.cat([torch.from_numpy(action).float().cuda(), phi_curr], dim=1)
         return self.forward_model(feature)
 
 class ICM(nn.Module):
@@ -68,11 +70,21 @@ class ICM(nn.Module):
         #TODO: add action embedding and corresponding module to compute loss
 
     def forward(self, action, s_curr, s_next):
+        # print(s_curr.size(), s_next.size())
         phi_curr, phi_next, a_pred = self.inverse_model(s_curr, s_next)
         phi_next_pred = self.forward_model(phi_curr, action)
         return phi_next_pred, phi_next, a_pred
     
-    def intrinsic_loss(self, phi_next_pred, phi_next, a_pred, action, return_all=False):
+    # def intrinsic_loss(self, phi_next_pred, phi_next, a_pred, action, return_all=False):
+    #     action_loss = self.action_criterion(a_pred, action)
+    #     forward_loss = 0.5 * self.forward_criterion(phi_next_pred, phi_next)
+    #     if return_all:
+    #         return action_loss, forward_loss, (1 - self.beta) * action_loss + self.beta * forward_loss
+    #     return (1 - self.beta) * action_loss + self.beta * forward_loss
+
+    def intrinsic_loss(self, action, s_curr, s_next, return_all=False):
+        phi_next_pred, phi_next, a_pred = self.forward(action, s_curr, s_next)
+        action = torch.from_numpy(action).long().cuda().squeeze()
         action_loss = self.action_criterion(a_pred, action)
         forward_loss = 0.5 * self.forward_criterion(phi_next_pred, phi_next)
         if return_all:
