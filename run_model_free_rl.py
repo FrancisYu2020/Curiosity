@@ -25,6 +25,8 @@ from gym.wrappers import FrameStack
 from nes_py.wrappers import JoypadSpace
 import gym_super_mario_bros
 
+from logger import Logger
+
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('num_episodes', 10, 'Number of episodes to evaluate.')
 flags.DEFINE_integer('episode_len', 200, 'Length of each episode at test time.')
@@ -41,6 +43,8 @@ flags.DEFINE_string('logdir', 'debug', 'Directory to store loss plots, etc.')
 flags.DEFINE_boolean('use_ICM', True, 'set True to use intrinsic reward module')
 # flags.mark_flag_as_required('logdir')
 # flags.mark_flag_as_required('algo')
+
+logger = Logger('./logs')
 
 def make_env(env_name):
     if env_name == 'mario':
@@ -104,12 +108,12 @@ def main(_):
             targets[-1].to(device)
 
         train_model_dqn(models, targets, state_dim, action_dim, train_envs,
-                        FLAGS.gamma, device, logdir, val_fn, double, noisy, FLAGS.use_ICM)
+                        FLAGS.gamma, device, logdir, val_fn, double, noisy, FLAGS.use_ICM, logger)
         model = models[0]
 
     elif FLAGS.algo == 'ac':
         model = ActorCriticPolicy(state_dim, [32, 32], action_dim)
-        train_model_ac(model, train_envs, FLAGS.gamma, device, logdir, val_fn, advantage=False)
+        train_model_ac(model, train_envs, FLAGS.gamma, device, logdir, val_fn, logger, advantage=False)
     # elif FLAGS.algo == 'a2c':
     #     model = ActorCriticPolicy(state_dim, [16, 32, 64], action_dim)
     #     train_model_ac(model, train_envs, FLAGS.gamma, device, logdir, val_fn, advantage=True)

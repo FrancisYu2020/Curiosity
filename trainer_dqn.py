@@ -137,7 +137,7 @@ def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
         optim.step()
     return total_bellman_error / q_num_steps
 
-def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device, logdir, val_fn, double, noisy, use_ICM):
+def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device, logdir, val_fn, double, noisy, use_ICM, logger):
     # print(state_dim, action_dim, envs, envs[0].action_space)
     # exit(0)
     train_writer = SummaryWriter(logdir / 'train')
@@ -175,6 +175,10 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
                 targets[i] = deepcopy(models[i])
                 targets[i].eval()
 
+            # TODO Need current step
+            logger.record(updates_i, epsilon, step)
+
+
         # Collect rollouts using the policy.
         rollouts, states = collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, device)
         # print(rollouts)
@@ -192,6 +196,13 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
                                      gamma, action_dim, q_batch_size,
                                      q_num_steps, device, double, ICM_module, optim_ICM)
         print(updates_i, total_samples)
+
+        # TODO Need current reward and q values and need to do this for each step, not just each episode
+        logger.log(reward, bellman_error, q)
+
+        #Log after each episode
+        logger.log_episode()
+
         log(train_writer, updates_i, 'train-samples', total_samples, 100, 1)
         log(train_writer, updates_i, 'train-bellman-error', bellman_error, 100, 1)
         log(train_writer, updates_i, 'train-epsilon', epsilon, 100, 1)
