@@ -44,7 +44,7 @@ flags.DEFINE_boolean('use_ICM', True, 'set True to use intrinsic reward module')
 # flags.mark_flag_as_required('logdir')
 # flags.mark_flag_as_required('algo')
 
-logger = Logger('./logs')
+logger = Logger(Path('logs'))
 
 def make_env(env_name):
     if env_name == 'mario':
