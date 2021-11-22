@@ -16,9 +16,10 @@ class InverseModel(nn.Module):
     '''
     The inverse model by default will transform the resized grey-scale image batch to a fixed dim feature vector [None, 1, 42, 42] -> [None, 288]
     '''
-    def __init__(self, image_size=84, nConvs=4, action_dim=4) -> None:
+    def __init__(self, state_dim, nConvs=4, action_dim=4) -> None:
         super().__init__()
-        module_list = [nn.Conv2d(4, 32, 3, 2), nn.ELU()] + [nn.Conv2d(32, 32, 3, 2), nn.ELU()]*(nConvs - 1)
+        input_dim, image_size, _ = state_dim
+        module_list = [nn.Conv2d(input_dim, 32, 3, 2), nn.ELU()] + [nn.Conv2d(32, 32, 3, 2), nn.ELU()]*(nConvs - 1)
         self.feature_size = image_size
         for _ in range(nConvs):
             self.feature_size = (self.feature_size - 2)//2 + 1
@@ -33,7 +34,6 @@ class InverseModel(nn.Module):
     def forward(self, s_curr, s_next):
         phi_curr = self.feature(s_curr).flatten(start_dim=1)
         phi_next = self.feature(s_next).flatten(start_dim=1)
-        # print(phi_curr.size(), phi_next.size())
         feature = torch.cat([phi_curr, phi_next], dim=1)
         a_pred = self.inverse_model(feature)
         return phi_curr, phi_next, a_pred
@@ -52,7 +52,6 @@ class ForwardModel(nn.Module):
         )
 
     def forward(self, phi_curr, action):
-        # print(action.shape)
         feature = torch.cat([torch.from_numpy(action).float().cuda(), phi_curr], dim=1)
         return self.forward_model(feature)
 
@@ -60,9 +59,9 @@ class ICM(nn.Module):
     '''
     The value of loss weight in the original paper follows that β is 0.2, and λ is 0.1. The Equation (7) is minimized with learning rate of 1e − 3.
     '''
-    def __init__(self, image_size=42, nConvs=4, action_dim=4, beta=0.2):
+    def __init__(self, state_dim, nConvs=4, action_dim=4, beta=0.2):
         super().__init__()
-        self.inverse_model = InverseModel(image_size, nConvs, action_dim)
+        self.inverse_model = InverseModel(state_dim, nConvs, action_dim)
         self.forward_model = ForwardModel(self.inverse_model.feature_size, action_dim)
         self.action_criterion = nn.CrossEntropyLoss()
         self.forward_criterion = nn.MSELoss()
@@ -70,7 +69,6 @@ class ICM(nn.Module):
         #TODO: add action embedding and corresponding module to compute loss
 
     def forward(self, action, s_curr, s_next):
-        # print(s_curr.size(), s_next.size())
         phi_curr, phi_next, a_pred = self.inverse_model(s_curr, s_next)
         phi_next_pred = self.forward_model(phi_curr, action)
         return phi_next_pred, phi_next, a_pred

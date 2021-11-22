@@ -38,33 +38,34 @@ flags.DEFINE_integer('frame_shape', 84, 'The RGB frames shape (shape, shape).')
 flags.DEFINE_float('gamma', 0.99, 'Discount factor gamma.')
 flags.DEFINE_enum('algo', 'dqn', ['dqn', 'dqn_double', 'dqn_noisy', 'dqn_all', 'ac'], 'which algo to use, dqn or ac')
 flags.DEFINE_string('logdir', 'debug', 'Directory to store loss plots, etc.')
+flags.DEFINE_string('device', 'cuda', 'specifiy "cpu" if not using cuda')
 flags.DEFINE_boolean('use_ICM', True, 'set True to use intrinsic reward module')
-# flags.mark_flag_as_required('logdir')
-# flags.mark_flag_as_required('algo')
+flags.mark_flag_as_required('logdir')
+flags.mark_flag_as_required('algo')
 
 def make_env(env_name):
     if env_name == 'mario':
         env = gym_super_mario_bros.make("SuperMarioBros-v0")
         # Apply Wrappers to environment
-        env = SkipFrame(env, skip=1)
+        env = SkipFrame(env, skip=FLAGS.input_frames)
         env = GrayScaleObservation(env)
         env = ResizeObservation(env, shape=FLAGS.frame_shape)
         env = FrameStack(env, num_stack=FLAGS.input_frames)
         return env
     elif env_name == 'lunar' or env_name == 'car':
-        return gym.make(env_name)
+        if env_name == 'lunar':
+            env_name = 'LunarLander-v2'
+        else:
+            env_name = 'MountainCar-v0'
+        env = gym.make(env_name).unwrapped
+        env = GymFrameStack(env, FLAGS.input_frames)
+        env = GrayScaleObservation(env)
+        env = ResizeObservation(env, shape=FLAGS.frame_shape)
+        env = FrameStack(env, num_stack=FLAGS.input_frames)
+        return env
+
     else:
         raise NotImplementedError(f'No environment named "{env_name}"')
-
-# def get_dims(env_name):
-#     if env_name == 'mario':
-#         return 4, 2
-#     elif env_name == 'lunar':
-#         return None
-#     elif env_name == 'car':
-#         return None
-#     else:
-#         raise NotImplementedError(f'No environment named "{env_name}"')
 
 def main(_):
     torch.manual_seed(FLAGS.seed)
@@ -81,11 +82,11 @@ def main(_):
     val_fn = lambda model, device: val(model, device, val_envs, FLAGS.episode_len)
 
     torch.set_num_threads(1)
-    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+    device = torch.device('cuda:0') if torch.cuda.is_available() and FLAGS.device == 'cuda' else torch.device('cpu')
 
-    # state_dim, action_dim = get_dims(FLAGS.env_name)
     state_dim, action_dim = [FLAGS.input_frames, FLAGS.frame_shape, FLAGS.frame_shape], train_envs[0].action_space.n
 
+    ### Major training code using DQN
     if (FLAGS.algo == 'dqn') or (FLAGS.algo == 'dqn_noisy') or (FLAGS.algo == 'dqn_double') or (FLAGS.algo == 'dqn_all'):
         noisy = (FLAGS.algo[-5:] == 'noisy')
         double = (FLAGS.algo[-6:] == 'double')
@@ -94,25 +95,30 @@ def main(_):
         n_models = 1
         models, targets = [], []
         print('create learner network...')
+
+        '''
+        for both learner and target networks, specifiy the convolutional layers
+        for the training. e.g. [32, 32, 32, 32] means four convolutional layers
+        where each layer transform the channel dimension from: input_dim->32->32->32->32
+        '''
+        hidden_layers = [32, 32, 32, 32]
         for i in range(n_models):
-            models.append(DQNPolicy(state_dim, [32], action_dim, device))
+            models.append(DQNPolicy(state_dim, [32, 32, 32, 32], action_dim, device))
             models[-1].to(device)
         
         print('create target network...')
         for i in range(n_models):
-            targets.append(DQNPolicy(state_dim, [32], action_dim, device))
+            targets.append(DQNPolicy(state_dim, [32, 32, 32, 32], action_dim, device))
             targets[-1].to(device)
 
         train_model_dqn(models, targets, state_dim, action_dim, train_envs,
-                        FLAGS.gamma, device, logdir, val_fn, double, noisy, FLAGS.use_ICM)
+                        FLAGS.gamma, device, logdir, val_fn, double, FLAGS.use_ICM)
         model = models[0]
 
     elif FLAGS.algo == 'ac':
+        raise NotImplementedError('AC not implemented yet!')
         model = ActorCriticPolicy(state_dim, [32, 32], action_dim)
         train_model_ac(model, train_envs, FLAGS.gamma, device, logdir, val_fn, advantage=False)
-    # elif FLAGS.algo == 'a2c':
-    #     model = ActorCriticPolicy(state_dim, [16, 32, 64], action_dim)
-    #     train_model_ac(model, train_envs, FLAGS.gamma, device, logdir, val_fn, advantage=True)
     else:
         raise NotImplementedError('Only DQN/AC is implemented for not...')
 

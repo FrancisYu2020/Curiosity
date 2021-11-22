@@ -71,7 +71,6 @@ class DQNPolicy(nn.Module):
 
     def forward(self, curr_state):
         feature = self.layers(curr_state).flatten(start_dim=1)
-        # print(feature.size())
         return self.q_value(feature)
     
     def act(self, x, epsilon=0.):

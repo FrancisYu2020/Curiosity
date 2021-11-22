@@ -10,13 +10,38 @@ import random, datetime, os, copy
 # Gym is an OpenAI toolkit for RL
 import gym
 from gym.spaces import Box
+from gym import spaces 
 
+class GymFrameStack(gym.Wrapper):
+    def __init__(self, env, k, run_with_video=True):
+        gym.Wrapper.__init__(self, env)
+        self.k = k
+        self.run_with_video = run_with_video
+
+    def reset(self):
+        ob = self.env.reset()
+        ob = self.env.render(mode='rgb_array')
+        return ob
+        # for _ in range(self.k):
+        #     self.frames.append(ob)
+        # return self._get_ob()
+
+    def step(self, action):
+        ob, reward, done, info = self.env.step(action)
+        # self.frames.append(self.env.render(mode='rbg_array'))
+        return self.env.render(mode='rgb_array'), reward, done, info
+
+    # def _get_ob(self):
+    #     states = np.array(self.frames)
+    #     print(states.shape)
+    #     return np.concatenate(states,axis=1)
 
 class SkipFrame(gym.Wrapper):
-    def __init__(self, env, skip):
+    def __init__(self, env, skip, run_with_video=True):
         """Return only every `skip`-th frame"""
         super().__init__(env)
         self._skip = skip
+        self.run_with_video = run_with_video
 
     def step(self, action):
         """Repeat action, and sum reward"""
@@ -28,6 +53,8 @@ class SkipFrame(gym.Wrapper):
             total_reward += reward
             if done:
                 break
+            if self.run_with_video:
+                self.env.render()
         return obs, total_reward, done, info
 
 class GrayScaleObservation(gym.ObservationWrapper):

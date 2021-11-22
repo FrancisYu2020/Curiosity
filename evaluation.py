@@ -29,7 +29,7 @@ def val(model, device, envs, episode_len):
         with torch.no_grad():
             _states = torch.from_numpy(states).float().to(device)
             _actions = model.act(_states)
-        actions = _actions.cpu().numpy()
+        actions = _actions.cpu().numpy().squeeze()
         step_data = []
         for i, env in enumerate(envs):
             if dones[i]:
@@ -44,9 +44,6 @@ def val(model, device, envs, episode_len):
                 # dones[i] = step_data[-1][-2]
             else:
                 step_data.append(env.step(actions[i]))
-            # dones[i] = step_data[-1][-2]
-        # print(step_data)
-        # step_data = [env.step(actions[i]) for i, env in enumerate(envs)]
         [env.render() for env in envs]
         new_states, rewards, dones, infos = list(zip(*step_data))
         states = new_states

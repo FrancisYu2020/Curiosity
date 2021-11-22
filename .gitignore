@@ -2,3 +2,6 @@ __pycache__
 archive
 debug
 test
+.ipynb_checkpoints
+debug_gym.ipynb
+car
