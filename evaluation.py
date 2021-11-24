@@ -34,7 +34,8 @@ def val(model, device, envs, episode_len):
         for i, env in enumerate(envs):
             if dones[i]:
                 s = torch.from_numpy(np.array([env.reset()])).to(device)
-                action = model.act(s).cpu().numpy()
+                action = model.act(s).cpu().numpy().squeeze(0)
+                # print(action, action.shape)
                 step_data.append(env.step(action[0]))
                 # if len(step_data) == i + 1:
                 #     action = model.act(s).cpu().numpy()
