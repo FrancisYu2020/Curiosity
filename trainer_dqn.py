@@ -115,9 +115,9 @@ def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
     for step in range(q_num_steps):
         optim.zero_grad()
         sample = replay_buffer.sample_batch(q_batch_size)
-        s, a, s_prime, r, done = sample
+        s, a, s_prime, r, done, info = sample
         s, r, s_prime = s.to(device), r.to(device), torch.from_numpy(s_prime).float().to(device)
-        # y = r + (1 - done)*gamma*targets[-1](torch.from_numpy(s_prime).float().to(device)).max(dim=1)[0]
+
         if not double:
             #target for vanilla DQN
             y = r + gamma*targets[-1](s_prime).max(dim=1)[0]
