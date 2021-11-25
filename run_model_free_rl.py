@@ -40,6 +40,7 @@ flags.DEFINE_enum('algo', 'dqn', ['dqn', 'dqn_double', 'dqn_noisy', 'dqn_all', '
 flags.DEFINE_string('logdir', 'debug', 'Directory to store loss plots, etc.')
 flags.DEFINE_string('device', 'cuda', 'specifiy "cpu" if not using cuda')
 flags.DEFINE_boolean('use_ICM', True, 'set True to use intrinsic reward module')
+flags.DEFINE_boolean('auxiliary', True, 'True if use auxiliary tasks to improve training')
 flags.mark_flag_as_required('logdir')
 flags.mark_flag_as_required('algo')
 
@@ -47,7 +48,7 @@ def make_env(env_name):
     if env_name == 'mario':
         env = gym_super_mario_bros.make("SuperMarioBros-v0")
         # Apply Wrappers to environment
-        env = SkipFrame(env, skip=FLAGS.input_frames)
+        env = SkipFrame(env, skip=FLAGS.input_frames, return_auxiliary=FLAGS.auxiliary)
         env = GrayScaleObservation(env)
         env = ResizeObservation(env, shape=FLAGS.frame_shape)
         env = FrameStack(env, num_stack=FLAGS.input_frames)
@@ -58,7 +59,7 @@ def make_env(env_name):
         else:
             env_name = 'MountainCar-v0'
         env = gym.make(env_name).unwrapped
-        env = GymFrameStack(env, FLAGS.input_frames)
+        env = GymFrameStack(env, FLAGS.input_frames, return_auxiliary=FLAGS.auxiliary)
         env = GrayScaleObservation(env)
         env = ResizeObservation(env, shape=FLAGS.frame_shape)
         env = FrameStack(env, num_stack=FLAGS.input_frames)

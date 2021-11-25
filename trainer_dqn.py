@@ -1,3 +1,6 @@
+#TODO: finishing adding auxiliary loss in this file
+
+
 import numpy as np
 import torch
 from tensorboardX import SummaryWriter
@@ -30,7 +33,7 @@ def log(writer, iteration, name, value, print_every=10, log_every=10):
 # come along, overwriting older rollouts as needed, and b) allows random
 # sampling of transition quadruples for training of the Q-networks.
 class ReplayBuffer(object):
-    def __init__(self, size, state_dim, action_dim, device):
+    def __init__(self, size, state_dim, action_dim, device, env_name='mario'):
         self.size = size
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -39,6 +42,14 @@ class ReplayBuffer(object):
         self.s_prime = np.zeros([size] + state_dim)
         self.r = torch.zeros(size).to(device)
         self.done = torch.zeros(size).to(device)
+        if env_name == 'mario':
+            self.info = np.zeros((size, 1))
+        elif env_name == 'car':
+            self.info = np.zeros((size, 2))
+        elif env_name == 'lunar':
+            self.info = np.zeros((size, 8))
+        else:
+            raise NotImplementedError(f'{env_name} info is not retrivable!')
         self.curr_size = 0
 
     def insert(self, rollouts):
@@ -49,14 +60,15 @@ class ReplayBuffer(object):
             self.s_prime[:(self.size - offset), :] = self.s_prime[offset:, :]
             self.r[:(self.size - offset)] = self.r[offset:].clone()
             self.done[:(self.size - offset)] = self.done[offset:].clone()
+            self.info[:(self.size - offset)] = self.info[offset:]
             for i in range(len(rollouts)):
                 k = i-len(rollouts)
-                self.s[k, :], self.a[k, :], self.s_prime[k,:], self.r[k], self.done[k], _ = rollouts[i]
+                self.s[k, :], self.a[k, :], self.s_prime[k,:], self.r[k], self.done[k], self.info[k, :] = rollouts[i]
             self.curr_size = self.size
         else:
             for i in range(len(rollouts)):
                 k = self.curr_size
-                self.s[k, :], self.a[k, :], self.s_prime[k,:], self.r[k], self.done[k], _ = rollouts[i]
+                self.s[k, :], self.a[k, :], self.s_prime[k,:], self.r[k], self.done[k], self.info[k, :] = rollouts[i]
                 self.curr_size += 1
 
     def sample_batch(self, batch_size):
@@ -65,15 +77,15 @@ class ReplayBuffer(object):
         if batch_size > self.curr_size:
             warnings.warn('Not enough rollouts to sample')
             k = self.curr_size
-            return self.s[:k,:], self.a[:k,:], self.s_prime[:k,:], self.r[:k], self.done[:k]
+            return self.s[:k,:], self.a[:k,:], self.s_prime[:k,:], self.r[:k], self.done[:k], self.info[:k]
         k = np.random.choice(self.curr_size, batch_size, replace=False)
-        return self.s[k], self.a[k], self.s_prime[k], self.r[k], self.done[k]
+        return self.s[k], self.a[k], self.s_prime[k], self.r[k], self.done[k], self.info[k]
 
 # Starting off from states in envs, rolls out num_steps_per_rollout for each
 # environment using the policy in `model`. Returns rollouts in the form of
 # states, actions, rewards and new states. Also returns the state the
 # environments end up in after num_steps_per_rollout time steps.
-def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, device):
+def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, device, return_auxiliary=False):
     rollouts = []
     # TODO
     for i in range(num_steps_per_rollout):
@@ -89,6 +101,8 @@ def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, devic
             else:
                 states.append(envs[k].reset())
         states = torch.from_numpy(np.array(states)).float().to(device)
+    # print(rollouts[-1][-1])
+    # exit(0)
     return rollouts, states
 
 # Function to train the Q function. Samples q_num_steps batches of size
