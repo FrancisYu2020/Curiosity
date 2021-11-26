@@ -43,7 +43,7 @@ class ReplayBuffer(object):
         self.r = torch.zeros(size).to(device)
         self.done = torch.zeros(size).to(device)
         if env_name == 'mario':
-            self.info = np.zeros((size, 1))
+            self.info = np.zeros((size, 2))
         elif env_name == 'car':
             self.info = np.zeros((size, 2))
         elif env_name == 'lunar':

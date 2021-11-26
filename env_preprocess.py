@@ -70,7 +70,7 @@ class SkipFrame(gym.Wrapper):
         # print(type(info['x_pos']))
         # if self.return_auxiliary:
         #     return obs, total_reward, done, info['x_pos']
-        return obs, total_reward, done, info['x_pos']
+        return obs, total_reward, done, np.array([info['x_pos'], info['y_pos']])
 
 class GrayScaleObservation(gym.ObservationWrapper):
     def __init__(self, env):
