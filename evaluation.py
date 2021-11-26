@@ -25,7 +25,13 @@ def val(model, device, envs, episode_len):
     all_rewards = []
     dones = [False for _ in envs]
     for i in range(episode_len):
-        states = np.array(states)
+        arr = []
+        for ent in states:
+            arr.append(np.asarray(ent))
+        arr = np.array(arr)
+        states = arr
+
+        # states = np.array(states)
         with torch.no_grad():
             _states = torch.from_numpy(states).float().to(device)
             _actions = model.act(_states)

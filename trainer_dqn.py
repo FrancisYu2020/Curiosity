@@ -7,14 +7,14 @@ from copy import deepcopy
 from model import *
 
 num_steps_per_rollout = 50
-num_updates = 1000
+num_updates = 5000
 reset_every = 200
 val_every = 2000
 
 replay_buffer_size = 1000
 q_target_update_every = 50
 q_batch_size = 1024
-q_num_steps = 20
+q_num_steps = 5
 
 def log(writer, iteration, name, value, print_every=10, log_every=10):
     # A simple function to let you log progress to the console and tensorboard.
@@ -104,7 +104,14 @@ def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, devic
                 states.append(collected_rollouts[k][2])
             else:
                 states.append(envs[k].reset())
-        states = torch.from_numpy(np.array(states)).float().to(device)
+
+        arr = []
+        for ent in states:
+            arr.append(np.asarray(ent))
+        arr = np.array(arr)
+        states = torch.from_numpy(arr).float().to(device)
+        # states = torch.from_numpy(np.array(states)).float().to(device)
+        # TODO
     return rollouts, states
 
 # Function to train the Q function. Samples q_num_steps batches of size
@@ -154,7 +161,14 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
 
     # Resetting all environments to initialize the state.
     num_steps, total_samples = 0, 0
-    states = torch.from_numpy(np.array([e.reset() for e in envs])).float().to(device)
+    
+    arr = []
+    for ent in [e.reset() for e in envs]:
+        arr.append(np.asarray(ent))
+    arr = np.array(arr)
+    states = torch.from_numpy(arr).float().to(device)
+    # states = torch.from_numpy(np.array([e.reset() for e in envs])).float().to(device)
+    # TODO
 
     for updates_i in range(num_updates):
         # Come up with a schedule for epsilon
@@ -192,6 +206,7 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
                                      gamma, action_dim, q_batch_size,
                                      q_num_steps, device, double, ICM_module, optim_ICM)
         print(updates_i, total_samples)
+
         log(train_writer, updates_i, 'train-samples', total_samples, 100, 1)
         log(train_writer, updates_i, 'train-bellman-error', bellman_error, 100, 1)
         log(train_writer, updates_i, 'train-epsilon', epsilon, 100, 1)

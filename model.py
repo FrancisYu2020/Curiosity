@@ -53,7 +53,7 @@ class ForwardModel(nn.Module):
 
     def forward(self, phi_curr, action):
         # print(action.shape)
-        feature = torch.cat([torch.from_numpy(action).float(), phi_curr], dim=1)
+        feature = torch.cat([torch.from_numpy(action).float().cuda(), phi_curr], dim=1)
         return self.forward_model(feature)
 
 class ICM(nn.Module):
@@ -84,7 +84,7 @@ class ICM(nn.Module):
 
     def intrinsic_loss(self, action, s_curr, s_next, return_all=False):
         phi_next_pred, phi_next, a_pred = self.forward(action, s_curr, s_next)
-        action = torch.from_numpy(action).long().squeeze()
+        action = torch.from_numpy(action).long().cuda().squeeze()
         action_loss = self.action_criterion(a_pred, action)
         forward_loss = 0.5 * self.forward_criterion(phi_next_pred, phi_next)
         if return_all:
