@@ -69,16 +69,22 @@ class DQNPolicy(nn.Module):
             nn.Linear(256, action_dim)
         )
 
-    def forward(self, curr_state):
+    # def forward(self, curr_state):
+    #     feature = self.layers(curr_state).flatten(start_dim=1)
+    #     # print(feature.size())
+    #     return self.q_value(feature)
+
+    def forward(self, curr_state,mode=""):
         feature = self.layers(curr_state).flatten(start_dim=1)
-        # print(feature.size())
+        if (mode == "aux"):
+            return feature
         return self.q_value(feature)
-    
+
     def act(self, x, epsilon=0.):
         qvals = self.forward(x)
         act = torch.argmax(qvals, 1, keepdim=True)
         if epsilon > 0:
-            act_random = torch.multinomial(torch.ones(qvals.shape[1],), 
+            act_random = torch.multinomial(torch.ones(qvals.shape[1],),
                                            act.shape[0], replacement=True)
             act_random = act_random.reshape(-1,1).to(self.device)
             combine = torch.rand(qvals.shape[0], 1) > epsilon
@@ -86,7 +92,7 @@ class DQNPolicy(nn.Module):
             act = act * combine + (1-combine) * act_random
             act = act.long()
         return act
-        
+
 
 class ActorCriticPolicy(nn.Module):
     def __init__(self, input_dim, hidden_layers, output_dim):

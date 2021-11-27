@@ -16,6 +16,45 @@ q_target_update_every = 50
 q_batch_size = 1024
 q_num_steps = 20
 
+class XYNet(nn.Module): #added by V
+    def __init__(self,feature_size):
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(feature_size,32),
+            nn.ReLU(),
+            nn.Linear(32,16),
+            nn.ReLU(),
+            nn.Linear(16,8),
+            nn.ReLU(),
+            nn.Linear(8,2)
+        )
+    def forward(self,feature):
+        out = self.layers(feature)
+        return out
+
+class ANet(nn.Module): #added by V
+    def __init__(self,feature_size):
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(feature_size*2,64),
+            nn.ReLU(),
+            nn.Linear(64,32),
+            nn.ReLU(),
+            nn.Linear(32,16),
+            nn.ReLU(),
+            nn.Linear(16,8),
+            nn.ReLU(),
+            nn.Linear(8,1)
+        )
+    def forward(self,feature1,feature2):
+        concat_feature = torch.cat((feature1, feature2),dim=1)
+        # print(feature1.size())
+        # print(feature2.size())
+        # print(concat_feature.size())
+        # exit(0)
+        out = self.layers(concat_feature)
+        return out
+
 def log(writer, iteration, name, value, print_every=10, log_every=10):
     # A simple function to let you log progress to the console and tensorboard.
     if np.mod(iteration, print_every) == 0:
@@ -40,6 +79,8 @@ class ReplayBuffer(object):
         self.s_prime = np.zeros([size] + state_dim)
         self.r = torch.zeros(size).to(device)
         self.done = torch.zeros(size).to(device)
+        self.xpos = torch.zeros(size).to(device)
+        self.ypos = torch.zeros(size).to(device)
         self.curr_size = 0
 
     def insert(self, rollouts):
@@ -54,12 +95,16 @@ class ReplayBuffer(object):
             self.done[:(self.size - offset)] = self.done[offset:].clone()
             for i in range(len(rollouts)):
                 k = i-len(rollouts)
-                self.s[k, :], self.a[k, :], self.s_prime[k,:], self.r[k], self.done[k], _ = rollouts[i]
+                self.s[k, :], self.a[k, :], self.s_prime[k,:], self.r[k], self.done[k], info = rollouts[i]
+                self.xpos[k] = info['x_pos']
+                self.ypos[k] = info['y_pos']
             self.curr_size = self.size
         else:
             for i in range(len(rollouts)):
                 k = self.curr_size
-                self.s[k, :], self.a[k, :], self.s_prime[k,:], self.r[k], self.done[k], _ = rollouts[i]
+                self.s[k, :], self.a[k, :], self.s_prime[k,:], self.r[k], self.done[k], info = rollouts[i]
+                self.xpos[k] = info['x_pos']
+                self.ypos[k] = info['y_pos']
                 self.curr_size += 1
                 # try:
                 #     k = self.curr_size
@@ -77,25 +122,47 @@ class ReplayBuffer(object):
         if batch_size > self.curr_size:
             warnings.warn('Not enough rollouts to sample')
             k = self.curr_size
-            return self.s[:k,:], self.a[:k,:], self.s_prime[:k,:], self.r[:k], self.done[:k]
+            return self.s[:k,:], self.a[:k,:], self.s_prime[:k,:], self.r[:k], self.done[:k], self.xpos[:k], self.ypos[:k]
         k = np.random.choice(self.curr_size, batch_size, replace=False)
-        return self.s[k], self.a[k], self.s_prime[k], self.r[k], self.done[k]
+        return self.s[k], self.a[k], self.s_prime[k], self.r[k], self.done[k], self.xpos[k], self.ypos[k]
+
+# # Starting off from states in envs, rolls out num_steps_per_rollout for each
+# # environment using the policy in `model`. Returns rollouts in the form of
+# # states, actions, rewards and new states. Also returns the state the
+# # environments end up in after num_steps_per_rollout time steps.
+# def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, device):
+#     rollouts = []
+#     # TODO
+#     for i in range(num_steps_per_rollout):
+#         actions = models[-1].act(states, epsilon).cpu().numpy()
+#         for j in range(len(actions)):
+#             rollouts.append([states[j], actions[j]] + list(envs[j].step(actions[j])))
+#             # print(type(rollouts[-1][-2]), rollouts[-1][-2])
+#             envs[j].render()
+#             # if rollouts[-1][-2]:
+#                 # check the environment is done
+#             rollouts[-1][-2] = bool(rollouts[-1][-2])
+#         states = []
+#         collected_rollouts = rollouts[-len(envs):]
+#         for k in range(len(envs)):
+#             if not collected_rollouts[k][-2]:
+#                 states.append(collected_rollouts[k][2])
+#             else:
+#                 states.append(envs[k].reset())
+#         states = torch.from_numpy(np.array(states)).float().to(device)
+#     return rollouts, states
 
 # Starting off from states in envs, rolls out num_steps_per_rollout for each
 # environment using the policy in `model`. Returns rollouts in the form of
 # states, actions, rewards and new states. Also returns the state the
 # environments end up in after num_steps_per_rollout time steps.
-def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, device):
+def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, device, return_auxiliary=False):
     rollouts = []
     # TODO
     for i in range(num_steps_per_rollout):
-        actions = models[-1].act(states, epsilon).cpu().numpy()
+        actions = models[-1].act(states, epsilon).cpu().numpy().squeeze()
         for j in range(len(actions)):
             rollouts.append([states[j], actions[j]] + list(envs[j].step(actions[j])))
-            # print(type(rollouts[-1][-2]), rollouts[-1][-2])
-            envs[j].render()
-            # if rollouts[-1][-2]:
-                # check the environment is done
             rollouts[-1][-2] = bool(rollouts[-1][-2])
         states = []
         collected_rollouts = rollouts[-len(envs):]
@@ -105,6 +172,8 @@ def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, devic
             else:
                 states.append(envs[k].reset())
         states = torch.from_numpy(np.array(states)).float().to(device)
+    # print(rollouts[-1][-1])
+    # exit(0)
     return rollouts, states
 
 # Function to train the Q function. Samples q_num_steps batches of size
@@ -112,13 +181,14 @@ def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, devic
 # obtain target values for the model to regress to. Takes optimization steps to
 # do so. Returns the bellman_error for plotting.
 def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
-                 q_batch_size, q_num_steps, device, double, ICM_module, optim_ICM):
+                 q_batch_size, q_num_steps, device, double, ICM_module, optim_ICM, xynet,anet):
     total_bellman_error = 0.
     for step in range(q_num_steps):
         optim.zero_grad()
         sample = replay_buffer.sample_batch(q_batch_size)
-        s, a, s_prime, r, done = sample
+        s, a, s_prime, r, done, xpos, ypos = sample
         s, r, s_prime = s.to(device), r.to(device), torch.from_numpy(s_prime).float().to(device)
+        # a = torch.from_numpy(np.array(a)).float().to(device)
         # y = r + (1 - done)*gamma*targets[-1](torch.from_numpy(s_prime).float().to(device)).max(dim=1)[0]
         if not double:
             #target for vanilla DQN
@@ -129,15 +199,40 @@ def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
             # print(targets[-1](s_prime).size(), models[-1](s_prime).argmax(dim=1).size())
             y = r + gamma*torch.take_along_dim(targets[-1](s_prime), models[-1](s_prime).argmax(dim=1, keepdim=True), dim=1).view(-1)
         pred_qvals = torch.take_along_dim(models[-1](s), torch.from_numpy(a).long().to(device), dim=1).view(-1)
+        feats = models[-1].forward(s,mode="aux")
+        feats_prime = models[-1].forward(s_prime,mode="aux")
+        predpos = xynet(feats)
+        predx = predpos[:,0]
+        predy = predpos[:,1]
+        aux1_error = torch.nn.functional.mse_loss(predx,xpos)+torch.nn.functional.mse_loss(predy,ypos)
+        preda = anet(feats,feats_prime)
+        a_torch = torch.from_numpy(a).long().to(device)
+        aux2_error = torch.nn.functional.mse_loss(preda,a_torch)
+        # print(preda)
+        # print(a)
+        # print(aux2_error)
+        # exit(0)
+        # print(np.shape(a))
+        # print(a.size())
+        # print(preda.size())
+        # exit(0)
+        # print(feats.size())
+        # print(xpos.size())
+        # print(predpos.size())
+        # print(predx.size())
+        # print(predy.size())
+        # exit(0)
         step_bellman_error = torch.nn.functional.mse_loss(pred_qvals, y, reduction='mean')
         if ICM_module is not None:
             step_bellman_error = 0.1 * step_bellman_error + ICM_module.intrinsic_loss(a, s, s_prime)
-        step_bellman_error.backward()
+            step_bellman_error_w_aux = 0.1 * step_bellman_error + ICM_module.intrinsic_loss(a, s, s_prime) + aux1_error + aux2_error.long()
+            # + aux2_error #added by V
+        step_bellman_error_w_aux.backward()
         total_bellman_error += step_bellman_error.item()
         optim.step()
     return total_bellman_error / q_num_steps
 
-def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device, logdir, val_fn, double, noisy, use_ICM, logger):
+def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device, logdir, val_fn, double, noisy, use_ICM):
     # print(state_dim, action_dim, envs, envs[0].action_space)
     # exit(0)
     train_writer = SummaryWriter(logdir / 'train')
@@ -148,6 +243,8 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
     optim = torch.optim.Adam(models[-1].parameters(), lr=1.5e-3)
     ICM_module = ICM(state_dim[1], action_dim=action_dim).to(device) if use_ICM else None
     optim_ICM = torch.optim.Adam(ICM_module.parameters(), lr=1.5e-3) if use_ICM else None
+    xynet = XYNet(56448) #added by V
+    anet = ANet(56448) #added by V
 
     # Set up the replay buffer
     replay_buffer = ReplayBuffer(replay_buffer_size, state_dim, 1, device)
@@ -175,15 +272,12 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
                 targets[i] = deepcopy(models[i])
                 targets[i].eval()
 
-            # TODO Need current step
-            logger.record(updates_i, epsilon, step)
-
-
         # Collect rollouts using the policy.
         rollouts, states = collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, device)
-        # print(rollouts)
-        # exit(0)
+        # print(rollouts[-1][-1])
+        # # exit(0)
         # print(states)
+        # exit(0)
         num_steps += num_steps_per_rollout
         total_samples += num_steps_per_rollout*len(envs)
 
@@ -192,17 +286,13 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
 
 
         # Use replay buffer to update the policy and take gradient steps.
+        # bellman_error = update_model(replay_buffer, models, targets, optim,
+        #                              gamma, action_dim, q_batch_size,
+        #                              q_num_steps, device, double, ICM_module, optim_ICM)
         bellman_error = update_model(replay_buffer, models, targets, optim,
                                      gamma, action_dim, q_batch_size,
-                                     q_num_steps, device, double, ICM_module, optim_ICM)
+                                     q_num_steps, device, double, ICM_module, optim_ICM, xynet, anet)
         print(updates_i, total_samples)
-
-        # TODO Need current reward and q values and need to do this for each step, not just each episode
-        logger.log(reward, bellman_error, q)
-
-        #Log after each episode
-        logger.log_episode()
-
         log(train_writer, updates_i, 'train-samples', total_samples, 100, 1)
         log(train_writer, updates_i, 'train-bellman-error', bellman_error, 100, 1)
         log(train_writer, updates_i, 'train-epsilon', epsilon, 100, 1)
