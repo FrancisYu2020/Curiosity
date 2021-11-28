@@ -69,10 +69,16 @@ class DQNPolicy(nn.Module):
             nn.Linear(256, action_dim)
         )
 
-    def forward(self, curr_state):
-        feature = self.layers(curr_state).flatten(start_dim=1)
-        return self.q_value(feature)
+    # def forward(self, curr_state):
+    #     feature = self.layers(curr_state).flatten(start_dim=1)
+    #     return self.q_value(feature)
     
+    def forward(self, curr_state,mode=""):
+        feature = self.layers(curr_state).flatten(start_dim=1)
+        if (mode == "aux"):
+            return feature
+        return self.q_value(feature)
+
     def act(self, x, epsilon=0.):
         qvals = self.forward(x)
         act = torch.argmax(qvals, 1, keepdim=True)
@@ -99,13 +105,15 @@ class ActorCriticPolicy(nn.Module):
             output_h = (output_h - 1)//2 + 1
         self.layers = nn.Sequential(*layers)
         self.actor = nn.Sequential(
-            nn.Linear(hidden_layers[-1] * output_h**2, output_dim),
-            # nn.Linear(hidden_layers[-1] * output_h**2, 256),
-            # nn.ReLU(),
-            # nn.Linear(256, action_dim)
+            # nn.Linear(hidden_layers[-1] * output_h**2, output_dim),
+            nn.Linear(hidden_layers[-1] * output_h**2, 256),
+            nn.ReLU(),
+            nn.Linear(256, output_dim)
         )
         self.critic = nn.Sequential(
-            nn.Linear(hidden_layers[-1] * output_h**2, 1)
+            nn.Linear(hidden_layers[-1] * output_h**2, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1)
         )
 
         # self.actor = nn.Linear(256, output_dim)

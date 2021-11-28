@@ -5,7 +5,7 @@ import torch
 num_steps_per_rollout = 5
 num_updates = 10000
 reset_every = 200
-val_every = 1000
+val_every = 2000
 
 
 def log(writer, iteration, name, value, print_every=10, log_every=10):
@@ -22,17 +22,19 @@ def log(writer, iteration, name, value, print_every=10, log_every=10):
 # environment using the policy in `model`. Returns rollouts in the form of
 # states, actions, rewards and new states. Also returns the state the
 # environments end up in after num_steps_per_rollout time steps.
-def collect_rollouts(model, env, states, num_steps, device):
+def collect_rollouts(model, envs, states, num_steps, device, env_name='mario'):
     rollouts = [None for _ in range(len(envs)*num_steps + 1)]
     # TODO
     for i in range(num_steps):
         actions = model.act(states, sample=True).cpu().numpy()
         for j in range(len(actions)):
             rollouts[i+num_steps*j] = [states[j], actions[j]] + list(envs[j].step(actions[j]))
+            if rollouts[-1] is not None and rollouts[-1][-2]:
+                envs[j].reset()
         states = torch.from_numpy(np.array([rollouts[i+num_steps*j][2] for j in range(len(actions))])).float().to(device)
     rollouts[-1] = len(envs)
-    print(rollouts)
-    print(states)
+    # print(rollouts)
+    # print(states)
     return rollouts, states
 
 # Using the rollouts returned by collect_rollouts function, updates the actor
@@ -42,7 +44,7 @@ def collect_rollouts(model, env, states, num_steps, device):
 # 2a. Compute returns, or estimate for returns, or advantages for updating the actor.
 # 2b. Set up the appropriate loss function for actor, and optimize it.
 # Function can return actor and critic loss, for plotting.
-def update_model(model, gamma, optim, rollouts, device, iteration, writer, use_advantage):
+def update_model(model, gamma, optim, rollouts, device, iteration, writer, use_advantage, ICM_module=None, ICM_optim=None):
     # TODO
     actor_loss, critic_loss = 0., 0.
     episodes = rollouts[-1]
@@ -55,8 +57,11 @@ def update_model(model, gamma, optim, rollouts, device, iteration, writer, use_a
     s_prime_all = np.zeros((size, *rollouts[0][2].shape))
     r_all = torch.zeros(size).to(device)
     done_all = torch.zeros(size).to(device)
+    info = np.zeros((size, *rollouts[0][-1].shape))
+    # print(info.shape)
     for k in range(len(rollouts)):
-        s_all[k, :], a_all[k, :], s_prime_all[k,:], r_all[k], done_all[k], _ = rollouts[k]
+        s_all[k, :], a_all[k, :], s_prime_all[k,:], r_all[k], done, _ = rollouts[k]
+        done_all[k] = bool(done)
     all_rewards = []
     for episode in range(episodes):
         indices = slice(episode*batch_size, (episode + 1)*batch_size)
@@ -69,7 +74,9 @@ def update_model(model, gamma, optim, rollouts, device, iteration, writer, use_a
         s_prime = s_prime_all[indices][:i+1]
         actor, critic = model(s)
         policy_dists = model.actor_to_distribution(actor).probs.squeeze(1)
+        # print(policy_dists)
         log_prob = torch.log(torch.take_along_dim(policy_dists, torch.from_numpy(a).long().to(device), dim=1))
+        # print(log_prob)
         s_prime = s_prime_all[indices][:i+1]
         r = r_all[indices][:i+1]
 
@@ -81,6 +88,7 @@ def update_model(model, gamma, optim, rollouts, device, iteration, writer, use_a
             qval = r[t] + gamma*qval
             qvals[t] = qval
         qvals = qvals.detach()
+        # print(qvals)
         # print(indices, critic.size(), qvals.size(), critic[indices].size(), critic[indices])
         advantage = qvals - critic.view(-1) if use_advantage else critic.view(-1)
         actor_loss_t = (-log_prob*advantage.detach()).mean()
@@ -115,6 +123,7 @@ def train_model_ac(model, envs, gamma, device, logdir, val_fn, advantage):
     states = torch.from_numpy(np.array([e.reset() for e in envs])).float().to(device)
 
     for updates_i in range(num_updates):
+        # print(model.actor[0].weight.data)
 
         # Put model in training mode.
         model.train()
@@ -139,9 +148,9 @@ def train_model_ac(model, envs, gamma, device, logdir, val_fn, advantage):
         # track progress on the training envirnments you can maintain the
         # returns on the training environments, and log or print it out when
         # you reset the environments.
-        if num_steps >= reset_every:
-            states = torch.from_numpy(np.array([e.reset() for e in envs])).float().to(device)
-            num_steps = 0
+        # if num_steps >= reset_every:
+        #     states = torch.from_numpy(np.array([e.reset() for e in envs])).float().to(device)
+        #     num_steps = 0
 
         # Every once in a while run the policy on the environment in the
         # validation set. We will use this to plot the learning curve as a

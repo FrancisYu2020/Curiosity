@@ -24,29 +24,42 @@ from gym.spaces import Box
 from gym.wrappers import FrameStack
 from nes_py.wrappers import JoypadSpace
 import gym_super_mario_bros
+SIMPLE_MOVEMENT = [
+    ['NOOP'],
+    ['right'],
+    ['right', 'A'],
+    ['right', 'B'],
+    # ['right', 'A', 'B'],
+    # ['right', 'A', 'B'],
+    ['right', 'A', 'B'],
+    ['A'],
+    ['left'],
+    # ['left', 'A'],
+    # ['left', 'B'],
+]
 
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('num_episodes', 10, 'Number of episodes to evaluate.')
-flags.DEFINE_integer('episode_len', 200, 'Length of each episode at test time.')
+flags.DEFINE_integer('num_episodes', 2, 'Number of episodes to evaluate.')
+flags.DEFINE_integer('episode_len', 400, 'Length of each episode at test time.')
 flags.DEFINE_string('env_name', 'mario', 'Name of environment.')
 flags.DEFINE_boolean('vis', False, 'To visualize or not.')
 flags.DEFINE_boolean('vis_save', False, 'To save visualization or not')
 flags.DEFINE_integer('num_train_envs', 5, 'Number of the asynchronized environments')
-flags.DEFINE_integer('seed', 0, 'Seed for randomly initializing policies.')
+flags.DEFINE_integer('seed', 1234, 'Seed for randomly initializing policies.')
 flags.DEFINE_integer('input_frames', 4, 'The RGB frames to be stacked together.')
 flags.DEFINE_integer('frame_shape', 84, 'The RGB frames shape (shape, shape).')
 flags.DEFINE_float('gamma', 0.99, 'Discount factor gamma.')
-flags.DEFINE_enum('algo', 'dqn', ['dqn', 'dqn_double', 'dqn_noisy', 'dqn_all', 'ac'], 'which algo to use, dqn or ac')
+flags.DEFINE_enum('algo', 'dqn', ['dqn', 'ac'], 'which algo to use, dqn or ac')
 flags.DEFINE_string('logdir', 'debug', 'Directory to store loss plots, etc.')
 flags.DEFINE_string('device', 'cuda', 'specifiy "cpu" if not using cuda')
-flags.DEFINE_boolean('use_ICM', True, 'set True to use intrinsic reward module')
+flags.DEFINE_integer('use_ICM', 0, 'set 1 to use intrinsic reward module')
 flags.DEFINE_boolean('auxiliary', True, 'True if use auxiliary tasks to improve training')
-flags.mark_flag_as_required('logdir')
-flags.mark_flag_as_required('algo')
 
 def make_env(env_name):
     if env_name == 'mario':
         env = gym_super_mario_bros.make("SuperMarioBros-v0")
+        # env = JoypadSpace(env, COMPLEX_MOVEMENT)
+        # env = JoypadSpace(env, SIMPLE_MOVEMENT)
         # Apply Wrappers to environment
         env = SkipFrame(env, skip=FLAGS.input_frames, return_auxiliary=FLAGS.auxiliary)
         env = GrayScaleObservation(env)
@@ -87,6 +100,7 @@ def main(_):
 
     state_dim, action_dim = [FLAGS.input_frames, FLAGS.frame_shape, FLAGS.frame_shape], train_envs[0].action_space.n
 
+    hidden_layers = [32, 32, 32, 32]
     ### Major training code using DQN
     if (FLAGS.algo == 'dqn') or (FLAGS.algo == 'dqn_noisy') or (FLAGS.algo == 'dqn_double') or (FLAGS.algo == 'dqn_all'):
         noisy = (FLAGS.algo[-5:] == 'noisy')
@@ -102,40 +116,28 @@ def main(_):
         for the training. e.g. [32, 32, 32, 32] means four convolutional layers
         where each layer transform the channel dimension from: input_dim->32->32->32->32
         '''
-        hidden_layers = [32, 32, 32, 32]
         for i in range(n_models):
-            models.append(DQNPolicy(state_dim, [32, 32, 32, 32], action_dim, device))
+            models.append(DQNPolicy(state_dim, hidden_layers, action_dim, device))
             models[-1].to(device)
         
         print('create target network...')
         for i in range(n_models):
-            targets.append(DQNPolicy(state_dim, [32, 32, 32, 32], action_dim, device))
+            targets.append(DQNPolicy(state_dim, hidden_layers, action_dim, device))
             targets[-1].to(device)
 
         train_model_dqn(models, targets, state_dim, action_dim, train_envs,
-                        FLAGS.gamma, device, logdir, val_fn, double, FLAGS.use_ICM)
+                        FLAGS.gamma, device, logdir, val_fn, FLAGS.use_ICM, env_name=FLAGS.env_name)
         model = models[0]
 
     elif FLAGS.algo == 'ac':
-        raise NotImplementedError('AC not implemented yet!')
-        model = ActorCriticPolicy(state_dim, [32, 32], action_dim)
-        train_model_ac(model, train_envs, FLAGS.gamma, device, logdir, val_fn, advantage=False)
+        # raise NotImplementedError('AC not implemented yet!')
+        model = ActorCriticPolicy(state_dim, hidden_layers, action_dim)
+        train_model_ac(model, train_envs, FLAGS.gamma, device, logdir, val_fn, advantage=True)
     else:
         raise NotImplementedError('Only DQN/AC is implemented for not...')
 
     [env.close() for env in train_envs]
     [env.close() for env in val_envs]
-
-    if FLAGS.vis or FLAGS.vis_save:
-        env_vis = make_env(FLAGS.env_name)
-        state, g, gif, info = test_model_in_env(
-            model, env_vis, FLAGS.episode_len, device, vis=FLAGS.vis,
-            vis_save=FLAGS.vis_save)
-        if FLAGS.vis_save:
-            gif[0].save(fp=f'{logdir}/vis-{env_vis.unwrapped.spec.id}.gif',
-                        format='GIF', append_images=gif,
-                        save_all=True, duration=50, loop=0)
-        env_vis.close()
 
 if __name__ == '__main__':
     app.run(main)

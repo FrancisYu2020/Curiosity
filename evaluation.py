@@ -20,7 +20,7 @@ def test_model_in_env(model, env, episode_len, device, vis=False, vis_save=False
             if done: break
     return state, g, gif, info
 
-def val(model, device, envs, episode_len):
+def val(model, device, envs, episode_len, env_name='mario'):
     states = [e.reset() for e in envs]
     all_rewards = []
     dones = [False for _ in envs]
@@ -37,17 +37,14 @@ def val(model, device, envs, episode_len):
                 action = model.act(s).cpu().numpy().squeeze(0)
                 # print(action, action.shape)
                 step_data.append(env.step(action[0]))
-                # if len(step_data) == i + 1:
-                #     action = model.act(s).cpu().numpy()
-                #     step_data[-1] = env.step(action[0])
-                # else:
-                #     step_data.append(env.step(actions[i]))
-                # dones[i] = step_data[-1][-2]
             else:
                 step_data.append(env.step(actions[i]))
         [env.render() for env in envs]
         new_states, rewards, dones, infos = list(zip(*step_data))
         states = new_states
         all_rewards.append(rewards)
+    travel_distances = []
+    for i in range(len(envs)):
+        travel_distances.append(infos[i][0])
     all_rewards = np.array(all_rewards)
-    return np.mean(np.sum(all_rewards, 0))
+    return np.mean(np.sum(all_rewards, 0)), np.array(travel_distances).mean() - 40

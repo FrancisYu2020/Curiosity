@@ -9,14 +9,14 @@ import warnings
 from copy import deepcopy
 from model import *
 
-num_steps_per_rollout = 50
+num_steps_per_rollout = 200
 num_updates = 1000
 reset_every = 200
 val_every = 2000
 
-replay_buffer_size = 1000
-q_target_update_every = 50
-q_batch_size = 1024
+replay_buffer_size = 10000
+q_target_update_every = 20
+q_batch_size = 1000
 q_num_steps = 5
 
 def log(writer, iteration, name, value, print_every=10, log_every=10):
@@ -101,8 +101,6 @@ def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, devic
             else:
                 states.append(envs[k].reset())
         states = torch.from_numpy(np.array(states)).float().to(device)
-    # print(rollouts[-1][-1])
-    # exit(0)
     return rollouts, states
 
 # Function to train the Q function. Samples q_num_steps batches of size
@@ -110,48 +108,73 @@ def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, devic
 # obtain target values for the model to regress to. Takes optimization steps to
 # do so. Returns the bellman_error for plotting.
 def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
-                 q_batch_size, q_num_steps, device, double, ICM_module, optim_ICM, reinforce=0.1):
+                 q_batch_size, q_num_steps, device, ICM_module, optim_ICM, reinforce, eta, intrinsic=1.0):
     total_bellman_error = 0.
+    total_train_reward = 0.
     for step in range(q_num_steps):
         optim.zero_grad()
         sample = replay_buffer.sample_batch(q_batch_size)
         s, a, s_prime, r, done, info = sample
         s, r, s_prime = s.to(device), r.to(device), torch.from_numpy(s_prime).float().to(device)
 
-        if not double:
+        pred_qvals = torch.take_along_dim(models[-1](s), torch.from_numpy(a).long().to(device), dim=1).view(-1)
+
+        # feats = models[-1].forward(s,mode="aux")
+        # feats_prime = models[-1].forward(s_prime,mode="aux")
+        # predpos = xynet(feats)
+        # predx = predpos[:,0]
+        # predy = predpos[:,1]
+        # aux1_error = torch.nn.functional.mse_loss(predx,xpos)+torch.nn.functional.mse_loss(predy,ypos)
+        # preda = anet(feats,feats_prime)
+        # a_torch = torch.from_numpy(a).long().to(device)
+        # aux2_error = torch.nn.functional.mse_loss(preda,a_torch)
+
+        if ICM_module is None:
             #target for vanilla DQN
             y = r + gamma*targets[-1](s_prime).max(dim=1)[0]
         else:
-            #target for double q-learning
-            y = r + gamma*torch.take_along_dim(targets[-1](s_prime), models[-1](s_prime).argmax(dim=1, keepdim=True), dim=1).view(-1)
-        pred_qvals = torch.take_along_dim(models[-1](s), torch.from_numpy(a).long().to(device), dim=1).view(-1)
-        step_bellman_error = torch.nn.functional.mse_loss(pred_qvals, y, reduction='mean')
+            intrinsic_loss, forward_loss = ICM_module.intrinsic_loss(a, s, s_prime)
+            intrinsic_loss *= intrinsic
+            # y = r + eta * forward_loss + gamma*(targets[-1](s_prime).max(dim=1)[0])
+            y = eta * forward_loss + gamma*(targets[-1](s_prime).max(dim=1)[0])
+        step_bellman_error = reinforce * torch.nn.functional.mse_loss(pred_qvals, y, reduction='mean')
+        # step_bellman_error_w_aux = 0.1 * step_bellman_error + ICM_module.intrinsic_loss(a, s, s_prime) + aux1_error + aux2_error.long()
+        try:
+            print(step_bellman_error, forward_loss.mean())
+        except:
+            print(step_bellman_error)
         if ICM_module is not None:
-            step_bellman_error = reinforce * step_bellman_error + ICM_module.intrinsic_loss(a, s, s_prime)
+            step_bellman_error = step_bellman_error + intrinsic_loss
+            optim_ICM.zero_grad()
+
         step_bellman_error.backward()
         total_bellman_error += step_bellman_error.item()
         optim.step()
-    return total_bellman_error / q_num_steps
+        if ICM_module is not None:
+            optim_ICM.step()
+            # pass
+        total_train_reward += r.sum()
+    return total_bellman_error / q_num_steps, (total_train_reward / q_num_steps).item()
 
-def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device, logdir, val_fn, double, use_ICM, reinfoce=0.1):
+def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device, logdir, val_fn, use_ICM, env_name, reinforce=0.1, eta=1.0):
     train_writer = SummaryWriter(logdir / 'train')
     val_writer = SummaryWriter(logdir / 'val')
 
     # You may want to setup an optimizer, loss functions for training.
     # optim = torch.optim.RMSprop(models[-1].parameters())
-    optim = torch.optim.Adam(models[-1].parameters(), lr=1.5e-3)
+    optim = torch.optim.Adam(models[-1].parameters(), lr=1e-3)
     ICM_module = ICM(state_dim, action_dim=action_dim).to(device) if use_ICM else None
-    optim_ICM = torch.optim.Adam(ICM_module.parameters(), lr=1.5e-3) if use_ICM else None
+    optim_ICM = torch.optim.Adam(ICM_module.parameters(), lr=1e-3) if use_ICM else None
 
     # Set up the replay buffer
-    replay_buffer = ReplayBuffer(replay_buffer_size, state_dim, 1, device)
+    replay_buffer = ReplayBuffer(replay_buffer_size, state_dim, 1, device, env_name)
 
     # Resetting all environments to initialize the state.
     num_steps, total_samples = 0, 0
     states = torch.from_numpy(np.array([e.reset() for e in envs])).float().to(device)
 
     for updates_i in range(num_updates):
-        # Come up with a schedule for epsilon
+        print(models[0].q_value[0].weight.data)
         epsilon = max(0.9*(1 - 2*updates_i/num_updates) + 0.1, 0.1)
 
         # Put model in training mode.
@@ -175,27 +198,15 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
 
 
         # Use replay buffer to update the policy and take gradient steps.
-        bellman_error = update_model(replay_buffer, models, targets, optim,
+        bellman_error, train_reward = update_model(replay_buffer, models, targets, optim,
                                      gamma, action_dim, q_batch_size,
-                                     q_num_steps, device, double, ICM_module, optim_ICM, reinfoce)
-        print(updates_i, total_samples)
+                                     q_num_steps, device, ICM_module, optim_ICM, reinforce, eta)
+        print(updates_i, total_samples, train_reward, bellman_error)
         log(train_writer, updates_i, 'train-samples', total_samples, 100, 1)
+        log(train_writer, updates_i, 'train-reward', train_reward, 100, 1)
         log(train_writer, updates_i, 'train-bellman-error', bellman_error, 100, 1)
         log(train_writer, updates_i, 'train-epsilon', epsilon, 100, 1)
         log(train_writer, updates_i, None, None, 100, 1)
-
-
-        # We are solving a continuing MDP which never returns a done signal. We
-        # are going to manully reset the environment every few time steps. To
-        # track progress on the training envirnments you can maintain the
-        # returns on the training environments, and log or print it out when
-        # you reset the environments.
-        # if num_steps >= reset_every:
-        #     states = torch.from_numpy(np.array([e.reset() for e in envs])).float().to(device)
-        #     num_steps = 0
-        #     if noisy:
-        #         for m in models:
-        #             m.reset_noise()
 
         # Every once in a while run the policy on the environment in the
         # validation set. We will use this to plot the learning curve as a
@@ -204,7 +215,8 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
             (total_samples - len(envs)*num_steps_per_rollout) // val_every
         if cross_boundary:
             models[0].eval()
-            mean_reward = val_fn(models[0], device)
+            mean_reward, mean_distance = val_fn(models[0], device)
+            log(val_writer, total_samples, 'val-mean-travel-distance', mean_distance, 1, 1)
             log(val_writer, total_samples, 'val-mean_reward', mean_reward, 1, 1)
             log(val_writer, total_samples, None, None, 1, 1)
             models[0].train()

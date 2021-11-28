@@ -22,12 +22,7 @@ class GymFrameStack(gym.Wrapper):
     def reset(self):
         ob = self.env.reset()
         frame = self.env.render(mode='rgb_array')
-        # if self.return_auxiliary:
-        #     return frame, ob
         return frame
-        # for _ in range(self.k):
-        #     self.frames.append(ob)
-        # return self._get_ob()
 
     def step(self, action):
         total_reward = 0.0
@@ -39,13 +34,6 @@ class GymFrameStack(gym.Wrapper):
             if done:
                 break
         return self.env.render(mode='rgb_array'), total_reward, done, obs
-        # if self.return_auxiliary:
-        #     return self.env.render(mode='rgb_array'), reward, done, ob
-
-    # def _get_ob(self):
-    #     states = np.array(self.frames)
-    #     print(states.shape)
-    #     return np.concatenate(states,axis=1)
 
 class SkipFrame(gym.Wrapper):
     def __init__(self, env, skip, return_auxiliary=False, run_with_video=True):
@@ -67,9 +55,6 @@ class SkipFrame(gym.Wrapper):
                 break
             if self.run_with_video:
                 self.env.render()
-        # print(type(info['x_pos']))
-        # if self.return_auxiliary:
-        #     return obs, total_reward, done, info['x_pos']
         return obs, total_reward, done, np.array([info['x_pos'], info['y_pos']])
 
 class GrayScaleObservation(gym.ObservationWrapper):
