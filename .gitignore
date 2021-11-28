@@ -5,3 +5,8 @@ test
 .ipynb_checkpoints
 debug_gym.ipynb
 car
+debug
+test
+DQN
+archive
+__pycache__

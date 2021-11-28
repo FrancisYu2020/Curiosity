@@ -9,13 +9,13 @@ import warnings
 from copy import deepcopy
 from model import *
 
-num_steps_per_rollout = 200
+num_steps_per_rollout = 50
 num_updates = 1000
 reset_every = 200
 val_every = 2000
 
 replay_buffer_size = 10000
-q_target_update_every = 20
+q_target_update_every = 50
 q_batch_size = 1000
 q_num_steps = 5
 
@@ -135,14 +135,14 @@ def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
         else:
             intrinsic_loss, forward_loss = ICM_module.intrinsic_loss(a, s, s_prime)
             intrinsic_loss *= intrinsic
-            # y = r + eta * forward_loss + gamma*(targets[-1](s_prime).max(dim=1)[0])
-            y = eta * forward_loss + gamma*(targets[-1](s_prime).max(dim=1)[0])
+            y = r + eta * forward_loss + gamma*(targets[-1](s_prime).max(dim=1)[0])
+            # y = eta * forward_loss + gamma*(targets[-1](s_prime).max(dim=1)[0])
         step_bellman_error = reinforce * torch.nn.functional.mse_loss(pred_qvals, y, reduction='mean')
         # step_bellman_error_w_aux = 0.1 * step_bellman_error + ICM_module.intrinsic_loss(a, s, s_prime) + aux1_error + aux2_error.long()
-        try:
-            print(step_bellman_error, forward_loss.mean())
-        except:
-            print(step_bellman_error)
+        # try:
+        #     print(step_bellman_error, forward_loss.mean())
+        # except:
+        #     print(step_bellman_error)
         if ICM_module is not None:
             step_bellman_error = step_bellman_error + intrinsic_loss
             optim_ICM.zero_grad()
@@ -174,7 +174,7 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
     states = torch.from_numpy(np.array([e.reset() for e in envs])).float().to(device)
 
     for updates_i in range(num_updates):
-        print(models[0].q_value[0].weight.data)
+        # print(models[0].q_value[0].weight.data)
         epsilon = max(0.9*(1 - 2*updates_i/num_updates) + 0.1, 0.1)
 
         # Put model in training mode.
