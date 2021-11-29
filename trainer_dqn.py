@@ -44,7 +44,7 @@ class ANet(nn.Module): #added by V
             nn.ReLU(),
             nn.Linear(16,8),
             nn.ReLU(),
-            nn.Linear(8,1)
+            nn.Linear(8,256)
         )
     def forward(self,feature1,feature2):
         concat_feature = torch.cat((feature1, feature2),dim=1)
@@ -207,7 +207,8 @@ def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
         aux1_error = torch.nn.functional.mse_loss(predx,xpos)+torch.nn.functional.mse_loss(predy,ypos)
         preda = anet(feats,feats_prime)
         a_torch = torch.from_numpy(a).long().to(device)
-        aux2_error = torch.nn.functional.mse_loss(preda,a_torch)
+        celoss = torch.nn.CrossEntropyLoss()
+        aux2_error = celoss(preda,a_torch.squeeze_())
         # print(preda)
         # print(a)
         # print(aux2_error)
