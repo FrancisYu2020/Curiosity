@@ -208,7 +208,7 @@ def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
         preda = anet(feats,feats_prime)
         a_torch = torch.from_numpy(a).long().to(device)
         celoss = torch.nn.CrossEntropyLoss()
-        aux2_error = celoss(preda,a_torch.squeeze_())
+        aux2_error = celoss(preda,a_torch.squeeze())
         # print(preda)
         # print(a)
         # print(aux2_error)
