@@ -1,45 +1,11 @@
+#Author Francis Yu
+
 from typing import List
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
-
-# This module is used to introduce noise in DQN q-value estimator network
-class NoisyLinear(nn.Module):
-    def __init__(self, in_size, out_size, sigma=0.2):
-        super().__init__()
-        self.layer = nn.Linear(in_size, out_size)
-        self.noise_W = nn.Parameter(torch.empty(out_size, in_size))
-        self.noise_b = nn.Parameter(torch.empty(out_size))
-        self.register_buffer('epsilon_W', torch.empty(out_size, in_size))
-        self.register_buffer('epsilon_b', torch.empty(out_size))
-        self.in_size, self.out_size, self.sigma = in_size, out_size, sigma
-        self.init_noisy_layer()
-        self.reset_epsilon()
-
-    def init_noisy_layer(self):
-        # torch.nn.init.kaiming_normal_(self.noise_W)
-        # torch.nn.init.normal_(self.noise_b)
-        fan_in = 1 / np.sqrt(self.in_size)
-        self.layer.weight.data.uniform_(-fan_in, fan_in)
-        self.noise_W.data.fill_(self.sigma * fan_in)
-        self.layer.bias.data.uniform_(-fan_in, fan_in)
-        self.noise_b.data.fill_(self.sigma * fan_in)
-
-    def reset_epsilon(self):
-        epsilon_in = torch.randn(self.in_size, device=self.layer.weight.device)
-        epsilon_out = torch.randn(self.out_size, device=self.layer.weight.device)
-        epsilon_in = epsilon_in.sign().mul_(epsilon_in.abs().sqrt_())
-        epsilon_out = epsilon_out.sign().mul_(epsilon_out.abs().sqrt_())
-        self.epsilon_W.copy_(epsilon_out.outer(epsilon_in))
-        self.epsilon_b.copy_(epsilon_out)
-
-    def forward(self, input):
-        if self.training:
-            return self.layer(input) + F.linear(input, self.noise_W * self.epsilon_W, self.noise_b * self.epsilon_b)
-        else:
-            return self.layer(input)
 
 class convBlock(nn.Module):
     def __init__(self, input_channels, output_channels, kernel=3, stride=2, padding=1) -> None:

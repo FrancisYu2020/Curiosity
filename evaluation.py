@@ -1,3 +1,6 @@
+#Author: Francis Yu
+# Modified from the original MP evaluation code
+
 from matplotlib.pyplot import step
 import torch
 import numpy as np

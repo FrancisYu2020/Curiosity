@@ -1,9 +1,10 @@
+#Author: Francis Yu
+
 import torch
 import torch.nn as nn
 import numpy as np
 
-#TODO: This implementation follows the original implemetation and hence the action is an one-hot vector. Instead, we may want to further do action embedding to make it potentially easier to learn as an extension for this project
-# intrinsic curiosity module
+
 '''
 The intrinsic curiosity module consists of the forward and the inverse model. The inverse model first maps the input state
 (st) into a feature vector φ(st) using a series of four convolution layers, each with 32 filters, kernel size 3x3, stride
@@ -100,7 +101,7 @@ class ICM(nn.Module):
 
 
 class XYNet(nn.Module): #added by V
-    def __init__(self,feature_size):
+    def __init__(self,feature_size, output_size):
         super().__init__()
         self.layers = nn.Sequential(
             nn.Linear(feature_size,32),
@@ -109,31 +110,23 @@ class XYNet(nn.Module): #added by V
             nn.ReLU(),
             nn.Linear(16,8),
             nn.ReLU(),
-            nn.Linear(8,2)
+            nn.Linear(8,output_size)
         )
     def forward(self,feature):
         out = self.layers(feature)
         return out
 
-class ANet(nn.Module): #added by V
+class ANet(nn.Module): #added by V, modified by Francis
     def __init__(self,feature_size):
         super().__init__()
         self.layers = nn.Sequential(
-            nn.Linear(feature_size*2,64),
+            nn.Linear(feature_size*2, 512),
             nn.ReLU(),
-            nn.Linear(64,32),
+            nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Linear(32,16),
-            nn.ReLU(),
-            nn.Linear(16,8),
-            nn.ReLU(),
-            nn.Linear(8,1)
+            nn.Linear(256, 256)
         )
     def forward(self,feature1,feature2):
         concat_feature = torch.cat((feature1, feature2),dim=1)
-        # print(feature1.size())
-        # print(feature2.size())
-        # print(concat_feature.size())
-        # exit(0)
         out = self.layers(concat_feature)
         return out

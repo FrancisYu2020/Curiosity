@@ -17,3 +17,9 @@ ICM_lunar
 plots
 results
 *.zip
+aggregate_and_plot_car.py
+aggregate_and_plot_lunar.py
+aggregate_and_plot_mario.py
+*_auxiliary
+ICM*
+frencis*

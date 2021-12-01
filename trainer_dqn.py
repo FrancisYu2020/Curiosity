@@ -1,5 +1,4 @@
-#TODO: finishing adding auxiliary loss in this file
-
+#Author: Francis Yu
 
 import numpy as np
 import torch
@@ -111,9 +110,10 @@ def collect_rollouts(models, envs, states, num_steps_per_rollout, epsilon, devic
 # obtain target values for the model to regress to. Takes optimization steps to
 # do so. Returns the bellman_error for plotting.
 def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
-                 q_batch_size, q_num_steps, device, ICM_module, optim_ICM, reinforce, eta, intrinsic=1.0):
+                 q_batch_size, q_num_steps, device, ICM_module, optim_ICM, xynet, anet, reinforce, eta, intrinsic=1.0, use_auxiliary=True):
     total_bellman_error = 0.
     total_train_reward = 0.
+    celoss = torch.nn.CrossEntropyLoss()
     for step in range(q_num_steps):
         optim.zero_grad()
         sample = replay_buffer.sample_batch(q_batch_size)
@@ -122,15 +122,16 @@ def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
 
         pred_qvals = torch.take_along_dim(models[-1](s), torch.from_numpy(a).long().to(device), dim=1).view(-1)
 
-        # feats = models[-1].forward(s,mode="aux")
-        # feats_prime = models[-1].forward(s_prime,mode="aux")
-        # predpos = xynet(feats)
-        # predx = predpos[:,0]
-        # predy = predpos[:,1]
-        # aux1_error = torch.nn.functional.mse_loss(predx,xpos)+torch.nn.functional.mse_loss(predy,ypos)
-        # preda = anet(feats,feats_prime)
-        # a_torch = torch.from_numpy(a).long().to(device)
-        # aux2_error = torch.nn.functional.mse_loss(preda,a_torch)
+        if use_auxiliary:
+            #added by V, modified by Francis
+            position = torch.from_numpy(info).float().to(device)
+            feats = models[-1].forward(s,mode="aux")
+            feats_prime = models[-1].forward(s_prime,mode="aux")
+            predpos = xynet(feats)
+            aux1_error = torch.nn.functional.mse_loss(predpos, position.to(device))
+            preda = anet(feats,feats_prime)
+            a_torch = torch.from_numpy(a).long().to(device)
+            aux2_error = celoss(preda,a_torch.squeeze())
 
         if ICM_module is None:
             #target for vanilla DQN
@@ -139,15 +140,12 @@ def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
             intrinsic_loss, forward_loss = ICM_module.intrinsic_loss(a, s, s_prime)
             intrinsic_loss *= intrinsic
             y = r + eta * forward_loss + gamma*(targets[-1](s_prime).max(dim=1)[0])
-            # y = eta * forward_loss + gamma*(targets[-1](s_prime).max(dim=1)[0])
         step_bellman_error = reinforce * torch.nn.functional.mse_loss(pred_qvals, y, reduction='mean')
-        # step_bellman_error_w_aux = 0.1 * step_bellman_error + ICM_module.intrinsic_loss(a, s, s_prime) + aux1_error + aux2_error.long()
-        # try:
-        #     print(step_bellman_error, forward_loss.mean())
-        # except:
-        #     print(step_bellman_error)
+
         if ICM_module is not None:
             step_bellman_error = step_bellman_error + intrinsic_loss
+            if use_auxiliary:
+                step_bellman_error += aux1_error + aux2_error
             optim_ICM.zero_grad()
 
         step_bellman_error.backward()
@@ -159,7 +157,7 @@ def update_model(replay_buffer, models, targets, optim, gamma, action_dim,
         total_train_reward += r.sum()
     return total_bellman_error / q_num_steps, (total_train_reward / q_num_steps).item()
 
-def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device, logdir, val_fn, use_ICM, env_name, reinforce=0.1, eta=1.0):
+def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device, logdir, val_fn, use_ICM, use_auxiliary, env_name, reinforce=0.1, eta=1.0):
     train_writer = SummaryWriter(logdir / 'train')
     val_writer = SummaryWriter(logdir / 'val')
 
@@ -168,6 +166,12 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
     optim = torch.optim.Adam(models[-1].parameters(), lr=1e-3)
     ICM_module = ICM(state_dim, action_dim=action_dim).to(device) if use_ICM else None
     optim_ICM = torch.optim.Adam(ICM_module.parameters(), lr=1e-3) if use_ICM else None
+    if env_name == 'lunar':
+        xynet = XYNet(1152, 8).to(device) if use_auxiliary else None
+    else:
+        xynet = XYNet(1152, 2).to(device) if use_auxiliary else None
+
+    anet = ANet(1152).to(device) if use_auxiliary else None
 
     # Set up the replay buffer
     replay_buffer = ReplayBuffer(replay_buffer_size, state_dim, 1, device, env_name)
@@ -203,7 +207,7 @@ def train_model_dqn(models, targets, state_dim, action_dim, envs, gamma, device,
         # Use replay buffer to update the policy and take gradient steps.
         bellman_error, train_reward = update_model(replay_buffer, models, targets, optim,
                                      gamma, action_dim, q_batch_size,
-                                     q_num_steps, device, ICM_module, optim_ICM, reinforce, eta)
+                                     q_num_steps, device, ICM_module, optim_ICM, xynet, anet, reinforce, eta, use_auxiliary=use_auxiliary)
         print(updates_i, total_samples, train_reward, bellman_error)
         log(train_writer, updates_i, 'train-samples', total_samples, 100, 1)
         log(train_writer, updates_i, 'train-reward', train_reward, 100, 1)

@@ -1,3 +1,6 @@
+#Author Francis Yu
+#Acknowledgement to the MP2 code, the code logic is similar
+
 import gym
 import numpy as np
 from pathlib import Path
@@ -9,7 +12,6 @@ import torch
 from absl import app
 from absl import flags
 from policies import DQNPolicy, ActorCriticPolicy
-from trainer_ac import train_model_ac
 from trainer_dqn import train_model_dqn
 from evaluation import val, test_model_in_env
 
@@ -24,19 +26,6 @@ from gym.spaces import Box
 from gym.wrappers import FrameStack
 from nes_py.wrappers import JoypadSpace
 import gym_super_mario_bros
-SIMPLE_MOVEMENT = [
-    ['NOOP'],
-    ['right'],
-    ['right', 'A'],
-    ['right', 'B'],
-    # ['right', 'A', 'B'],
-    # ['right', 'A', 'B'],
-    ['right', 'A', 'B'],
-    ['A'],
-    ['left'],
-    # ['left', 'A'],
-    # ['left', 'B'],
-]
 
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('num_episodes', 2, 'Number of episodes to evaluate.')
@@ -53,14 +42,12 @@ flags.DEFINE_enum('algo', 'dqn', ['dqn', 'ac'], 'which algo to use, dqn or ac')
 flags.DEFINE_string('logdir', 'debug', 'Directory to store loss plots, etc.')
 flags.DEFINE_string('device', 'cuda', 'specifiy "cpu" if not using cuda')
 flags.DEFINE_integer('use_ICM', 0, 'set 1 to use intrinsic reward module')
+flags.DEFINE_integer('use_auxiliary', 0, 'set 1 to use auxiliary loss')
 flags.DEFINE_boolean('auxiliary', True, 'True if use auxiliary tasks to improve training')
 
 def make_env(env_name):
     if env_name == 'mario':
         env = gym_super_mario_bros.make("SuperMarioBros-v0")
-        # env = JoypadSpace(env, COMPLEX_MOVEMENT)
-        # env = JoypadSpace(env, SIMPLE_MOVEMENT)
-        # Apply Wrappers to environment
         env = SkipFrame(env, skip=FLAGS.input_frames, return_auxiliary=FLAGS.auxiliary)
         env = GrayScaleObservation(env)
         env = ResizeObservation(env, shape=FLAGS.frame_shape)
@@ -104,10 +91,6 @@ def main(_):
     hidden_layers = [32, 32, 32, 32]
     ### Major training code using DQN
     if (FLAGS.algo == 'dqn') or (FLAGS.algo == 'dqn_noisy') or (FLAGS.algo == 'dqn_double') or (FLAGS.algo == 'dqn_all'):
-        noisy = (FLAGS.algo[-5:] == 'noisy')
-        double = (FLAGS.algo[-6:] == 'double')
-        if FLAGS.algo[-3:] == 'all':
-            noisy, double = True, True
         n_models = 1
         models, targets = [], []
         print('create learner network...')
@@ -127,13 +110,13 @@ def main(_):
             targets[-1].to(device)
 
         train_model_dqn(models, targets, state_dim, action_dim, train_envs,
-                        FLAGS.gamma, device, logdir, val_fn, FLAGS.use_ICM, env_name=FLAGS.env_name)
+                        FLAGS.gamma, device, logdir, val_fn, FLAGS.use_ICM, env_name=FLAGS.env_name, use_auxiliary=FLAGS.use_auxiliary)
         model = models[0]
 
     elif FLAGS.algo == 'ac':
-        # raise NotImplementedError('AC not implemented yet!')
-        model = ActorCriticPolicy(state_dim, hidden_layers, action_dim)
-        train_model_ac(model, train_envs, FLAGS.gamma, device, logdir, val_fn, advantage=True)
+        raise NotImplementedError('AC not implemented yet!')
+        # model = ActorCriticPolicy(state_dim, hidden_layers, action_dim)
+        # train_model_ac(model, train_envs, FLAGS.gamma, device, logdir, val_fn, advantage=True)
     else:
         raise NotImplementedError('Only DQN/AC is implemented for not...')
 

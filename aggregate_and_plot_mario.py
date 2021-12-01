@@ -1,3 +1,6 @@
+# Author: Francis Yu
+# Modified from the MP plotting code
+
 from pathlib import Path
 import os
 import numpy as np
@@ -46,7 +49,7 @@ def main(_):
                         mean_rewards-std_rewards, mean_rewards+std_rewards, alpha=0.2)
 
     ax.legend()
-    ax.set_ylim([0, 30])
+    ax.set_ylim(bottom=-5)
     ax.grid('major')
     fig.savefig(FLAGS.output_file_name + '.png', bbox_inches='tight')
 
@@ -57,7 +60,7 @@ def main(_):
         print(logdir)
         samples = []
         prefix = logdir.split('_')[0]
-        isdqn = (prefix == 'DQN')
+        isdqn = True
         if isdqn:
             errors = []
         else:
@@ -107,5 +110,35 @@ def main(_):
     fig.savefig(FLAGS.output_file_name + '_train_loss.png', bbox_inches='tight')
 
 
+    plt.clf()
+    fig = plt.figure(figsize=(8,4))
+    ax = fig.gca()
+    for logdir in FLAGS.logdirs:
+        samples = []
+        rewards = []
+        for seed in range(FLAGS.seeds):
+            logdir_ = Path(logdir) / f'seed{seed}'
+            logdir_ = logdir_ / 'val'
+            event_acc = EventAccumulator(str(logdir_))
+            event_acc.Reload()
+            _, step_nums, vals = zip(*event_acc.Scalars('val-mean-travel-distance'))
+            samples.append(step_nums)
+            rewards.append(vals)
+            print(len(vals))
+        samples = np.array(samples)
+        assert(np.all(samples == samples[:1,:]))
+        rewards = np.array(rewards)
+        # print(rewards.shape)
+        # rewards = (rewards.T - rewards.min(axis=1)).T
+        mean_rewards = np.mean(rewards, 0)
+        std_rewards = np.std(rewards, 0)
+        ax.plot(samples[0,:], mean_rewards, label=logdir)
+        ax.fill_between(samples[0,:],
+                        mean_rewards-std_rewards, mean_rewards+std_rewards, alpha=0.2)
+
+    ax.legend()
+    # ax.set_ylim([0, 30])
+    ax.grid('major')
+    fig.savefig(FLAGS.output_file_name + '_distance.png', bbox_inches='tight')
 if __name__ == '__main__':
     app.run(main)

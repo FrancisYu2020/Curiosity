@@ -1,3 +1,6 @@
+# Author: Francis Yu
+# Modified from: https://pytorch.org/tutorials/intermediate/mario_rl_tutorial.html
+
 import torch
 from torch import nn
 from torchvision import transforms as T
