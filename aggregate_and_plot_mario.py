@@ -13,8 +13,12 @@ flags.DEFINE_string('output_file_name', 'out.pdf',
     'Output file to generate plot.')
 flags.DEFINE_integer('seeds', 5,
     'Number of seeds per run')
+# flags.DEFINE_STRING('env_name', 'mario', 'Name of the environment to use')
 
 def main(_):
+    
+    FLAGS.output_file_name = 'plots/' + FLAGS.output_file_name
+    
     sns.color_palette()
     fig = plt.figure(figsize=(8,4))
     ax = fig.gca()
@@ -31,6 +35,7 @@ def main(_):
             _, step_nums, vals = zip(*event_acc.Scalars('val-mean_reward'))
             samples.append(step_nums)
             rewards.append(vals)
+            print(len(vals))
         samples = np.array(samples)
         assert(np.all(samples == samples[:1,:]))
         rewards = np.array(rewards)
@@ -40,8 +45,8 @@ def main(_):
         ax.fill_between(samples[0,:],
                         mean_rewards-std_rewards, mean_rewards+std_rewards, alpha=0.2)
 
-    ax.legend(loc=4)
-    ax.set_ylim([0, 210])
+    ax.legend()
+    ax.set_ylim([0, 30])
     ax.grid('major')
     fig.savefig(FLAGS.output_file_name + '.png', bbox_inches='tight')
 
@@ -65,6 +70,7 @@ def main(_):
             event_acc.Reload()
             if isdqn:
                 _, step_nums, loss = zip(*event_acc.Scalars('train-bellman-error'))
+
                 errors.append(loss)
             else:
                 _, step_nums, a_loss = zip(*event_acc.Scalars('train-actor_loss'))

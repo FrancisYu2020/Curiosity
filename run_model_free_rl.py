@@ -40,7 +40,7 @@ SIMPLE_MOVEMENT = [
 
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('num_episodes', 2, 'Number of episodes to evaluate.')
-flags.DEFINE_integer('episode_len', 400, 'Length of each episode at test time.')
+flags.DEFINE_integer('episode_len', 100, 'Length of each episode at test time.')
 flags.DEFINE_string('env_name', 'mario', 'Name of environment.')
 flags.DEFINE_boolean('vis', False, 'To visualize or not.')
 flags.DEFINE_boolean('vis_save', False, 'To save visualization or not')
@@ -99,6 +99,7 @@ def main(_):
     device = torch.device('cuda:0') if torch.cuda.is_available() and FLAGS.device == 'cuda' else torch.device('cpu')
 
     state_dim, action_dim = [FLAGS.input_frames, FLAGS.frame_shape, FLAGS.frame_shape], train_envs[0].action_space.n
+    print(f'action size = {action_dim}')
 
     hidden_layers = [32, 32, 32, 32]
     ### Major training code using DQN

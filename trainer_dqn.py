@@ -10,7 +10,7 @@ from copy import deepcopy
 from model import *
 
 num_steps_per_rollout = 50
-num_updates = 1000
+num_updates = 400
 reset_every = 200
 val_every = 2000
 
@@ -39,6 +39,7 @@ class ReplayBuffer(object):
         self.action_dim = action_dim
         self.s = torch.zeros([size] + state_dim)
         self.a = np.zeros((size, action_dim))
+        print((size, action_dim))
         self.s_prime = np.zeros([size] + state_dim)
         self.r = torch.zeros(size).to(device)
         self.done = torch.zeros(size).to(device)
@@ -70,6 +71,8 @@ class ReplayBuffer(object):
                 k = self.curr_size
                 self.s[k, :], self.a[k, :], self.s_prime[k,:], self.r[k], self.done[k], self.info[k, :] = rollouts[i]
                 self.curr_size += 1
+            # print(self.a)
+            # exit(0)
 
     def sample_batch(self, batch_size):
         samples = None

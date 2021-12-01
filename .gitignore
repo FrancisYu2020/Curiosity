@@ -10,3 +10,10 @@ test
 DQN
 archive
 __pycache__
+ICM_car
+lunar
+DQN_ICM_DQN
+ICM_lunar
+plots
+results
+*.zip
